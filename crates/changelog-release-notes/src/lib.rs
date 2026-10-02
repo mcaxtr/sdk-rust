@@ -1,4 +1,4 @@
-//! Shared changelog planning for Temporal SDK release adapters.
+//! Shared changelog preparation for Temporal SDK release adapters.
 
 use chrono::NaiveDate;
 use std::{
@@ -300,11 +300,7 @@ pub fn assemble_release(
         .into_iter()
         .find(|(_, _, title)| *title == "Changelog")
         .ok_or_else(|| ChangelogError("missing # Changelog heading".into()))?;
-    let mut output = text[..insert].to_owned();
-    if !output.ends_with('\n') {
-        output.push('\n');
-    }
-    output.push_str(&format!("\n## [{version}] - {date}\n\n"));
+    let mut sections = Vec::new();
     for (index, (_, heading)) in CATEGORIES.iter().enumerate() {
         let mut entries: Vec<_> = fragments.iter().filter(|f| f.category == index).collect();
         entries.sort_by(|a, b| a.path.cmp(&b.path));
@@ -316,17 +312,23 @@ pub fn assemble_release(
         } else {
             heading
         };
-        output.push_str(&format!("### {heading}\n\n"));
-        for fragment in entries {
-            output.push_str(&fragment.body);
-            if !fragment.body.ends_with('\n') {
-                output.push('\n');
-            }
-            output.push('\n');
-        }
+        let entries: String = entries
+            .into_iter()
+            .map(|fragment| {
+                let body = &fragment.body;
+                let newline = if body.ends_with('\n') { "" } else { "\n" };
+                format!("{body}{newline}\n")
+            })
+            .collect();
+        sections.push(format!("### {heading}\n\n{entries}"));
     }
-    output.push_str(text[insert..].trim_start_matches(['\r', '\n']));
-    Ok(output)
+    let sections = sections.join("");
+    let preamble = &text[..insert];
+    let newline = if preamble.ends_with('\n') { "" } else { "\n" };
+    let history = text[insert..].trim_start_matches(['\r', '\n']);
+    Ok(format!(
+        "{preamble}{newline}\n## [{version}] - {date}\n\n{sections}{history}"
+    ))
 }
 
 pub fn prepare_release(

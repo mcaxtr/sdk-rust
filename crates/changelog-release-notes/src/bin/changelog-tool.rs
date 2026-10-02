@@ -99,10 +99,8 @@ fn main() -> Result<(), String> {
         }
         Command::Notes { changelog, version } => {
             let text = fs::read_to_string(repo.join(changelog)).map_err(|e| e.to_string())?;
-            print!(
-                "{}",
-                release_section(&text, &version).map_err(|e| e.to_string())?
-            );
+            let notes = release_section(&text, &version).map_err(|e| e.to_string())?;
+            print!("{notes}");
         }
         Command::CoreNotes {
             submodule,
