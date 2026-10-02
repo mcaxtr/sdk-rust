@@ -1,7 +1,6 @@
 //! Shared changelog planning for Temporal SDK release adapters.
 
 use chrono::NaiveDate;
-use serde::Serialize;
 use std::{
     fs,
     path::{Component, Path},
@@ -37,12 +36,6 @@ impl From<&str> for ChangelogError {
 }
 
 type Result<T> = std::result::Result<T, ChangelogError>;
-
-#[derive(Debug, Serialize)]
-pub struct ReleasePlan {
-    pub changelog: String,
-    pub consumed_paths: Vec<String>,
-}
 
 pub struct ReleaseOptions<'a> {
     pub version: &'a str,
@@ -341,13 +334,21 @@ pub fn prepare_release(
     changelog: &Path,
     directory: &Path,
     options: &ReleaseOptions<'_>,
-) -> Result<ReleasePlan> {
+) -> Result<usize> {
     relative(changelog)?;
     let fragments = collect_fragments(repo, directory)?;
-    Ok(ReleasePlan {
-        changelog: assemble_release(&read(&repo.join(changelog))?, &fragments, options)?,
-        consumed_paths: fragments.into_iter().map(|f| f.path).collect(),
-    })
+    let text = assemble_release(&read(&repo.join(changelog))?, &fragments, options)?;
+    fs::write(repo.join(changelog), text)
+        .map_err(|e| ChangelogError(format!("failed to write {}: {e}", changelog.display())))?;
+    for fragment in &fragments {
+        fs::remove_file(repo.join(&fragment.path)).map_err(|e| {
+            ChangelogError(format!(
+                "failed to consume {} after writing changelog: {e}",
+                fragment.path
+            ))
+        })?;
+    }
+    Ok(fragments.len())
 }
 
 pub fn check_fragments(

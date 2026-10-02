@@ -66,35 +66,33 @@ fn prepends_grouped_notes_without_changing_bodies_or_history() {
         "changelog/breaking-changes/dancing-cupcake.md",
         "- A breaking change.\n",
     );
-    let plan = prepare_release(
+    let count = prepare_release(
         &repo.root,
         Path::new("CHANGELOG.md"),
         Path::new("changelog"),
         &options(),
     )
     .unwrap();
+    let changelog = fs::read_to_string(repo.root.join("CHANGELOG.md")).unwrap();
     assert!(
-        plan.changelog
+        changelog
             .starts_with("<!-- Intro -->\n# Changelog\n\n## [1.1.0] - 2026-10-02\n\n### Added")
     );
+    assert!(changelog.contains("### :boom: Breaking Changes\n\n- A breaking change."));
+    assert!(changelog.contains(body));
+    assert!(changelog.ends_with(history));
+    assert!(changelog.find(body).unwrap() < changelog.find("- Last fix.").unwrap());
+    assert_eq!(count, 4);
+    assert!(!changelog.contains("Unreleased"));
     assert!(
-        plan.changelog
-            .contains("### :boom: Breaking Changes\n\n- A breaking change.")
-    );
-    assert!(plan.changelog.contains(body));
-    assert!(plan.changelog.ends_with(history));
-    assert!(plan.changelog.find(body).unwrap() < plan.changelog.find("- Last fix.").unwrap());
-    assert_eq!(plan.consumed_paths.len(), 4);
-    assert!(!plan.changelog.contains("Unreleased"));
-    assert!(repo.root.join(&plan.consumed_paths[0]).exists());
-    assert!(
-        release_section(&plan.changelog, "1.1.0")
+        collect_fragments(&repo.root, Path::new("changelog"))
             .unwrap()
-            .contains(body)
+            .is_empty()
     );
+    assert!(release_section(&changelog, "1.1.0").unwrap().contains(body));
     let fragments = collect_fragments(&repo.root, Path::new("changelog")).unwrap();
     assert!(
-        assemble_release(&plan.changelog, &fragments, &options())
+        assemble_release(&changelog, &fragments, &options())
             .unwrap_err()
             .to_string()
             .contains("already contains")
@@ -198,11 +196,7 @@ fn range_notes_survive_fragment_migration_and_assembly() {
     );
     repo.commit();
     let directory = Path::new("crates/sdk-core/changelog");
-    let plan = prepare_release(&repo.root, Path::new(path), directory, &options()).unwrap();
-    repo.write(path, &plan.changelog);
-    for file in plan.consumed_paths {
-        fs::remove_file(repo.root.join(file)).unwrap();
-    }
+    prepare_release(&repo.root, Path::new(path), directory, &options()).unwrap();
     let end = repo.commit();
     let notes = changelog_release_notes::range::release_notes(&repo.root, &base, &end, path)
         .unwrap()
@@ -270,7 +264,7 @@ fn resolves_core_range_from_parent_tags_and_gitlinks() {
 }
 
 #[test]
-fn cli_returns_json_plan_for_an_explicit_parent_repository() {
+fn cli_prepares_an_explicit_parent_repository() {
     let repo = Repo::new();
     repo.write("CHANGELOG.md", "# Changelog\n");
     repo.write("changelog/fixed/silly-sloth.md", "- A fix.\n");
@@ -285,10 +279,45 @@ fn cli_returns_json_plan_for_an_explicit_parent_repository() {
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    let plan: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(plan["consumed_paths"][0], "changelog/fixed/silly-sloth.md");
+    assert!(String::from_utf8_lossy(&output.stdout).contains("consumed 1 changelog fragments"));
+    let changelog = fs::read_to_string(repo.root.join("CHANGELOG.md")).unwrap();
+    assert!(changelog.contains("## [1.1.0] - 2026-10-02"));
+    assert!(changelog.contains("- A fix."));
+    assert!(!repo.root.join("changelog/fixed/silly-sloth.md").exists());
+    repo.write("changelog/fixed/late-llama.md", "- Late note.\n");
+    let retry = Command::new(env!("CARGO_BIN_EXE_changelog-tool"))
+        .args(["prepare", "--repo"])
+        .arg(&repo.root)
+        .args(["--version", "1.1.0", "--date", "2026-10-02"])
+        .output()
+        .unwrap();
+    assert!(!retry.status.success());
+    assert!(repo.root.join("changelog/fixed/late-llama.md").exists());
+    assert_eq!(
+        fs::read_to_string(repo.root.join("CHANGELOG.md")).unwrap(),
+        changelog
+    );
+}
+
+#[test]
+fn invalid_fragments_do_not_change_changelog_or_consume_notes() {
+    let repo = Repo::new();
+    repo.write("CHANGELOG.md", "# Changelog\n");
+    repo.write("changelog/fixed/valid-otter.md", "- A valid note.\n");
+    repo.write("changelog/fixed/empty-otter.md", " \n");
+    assert!(
+        prepare_release(
+            &repo.root,
+            Path::new("CHANGELOG.md"),
+            Path::new("changelog"),
+            &options()
+        )
+        .is_err()
+    );
     assert_eq!(
         fs::read_to_string(repo.root.join("CHANGELOG.md")).unwrap(),
         "# Changelog\n"
     );
+    assert!(repo.root.join("changelog/fixed/valid-otter.md").exists());
+    assert!(repo.root.join("changelog/fixed/empty-otter.md").exists());
 }

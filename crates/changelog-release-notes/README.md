@@ -16,9 +16,10 @@ Commands:
   workflow handles override labels and checks out the PR's synthetic merge result.
 * `prepare --version <version> --date YYYY-MM-DD [--changelog CHANGELOG.md]
   [--fragments changelog] [--breaking-heading 'Breaking Changes'] [--allow-empty]`
-  prints JSON containing `changelog` (the assembled Markdown) and `consumed_paths`
-  (repository-relative fragment paths). It writes no files. Empty releases are
-  rejected unless explicitly allowed; duplicate versions are always rejected.
+  validates all pending notes, writes the dated release into the changelog, and
+  removes the consumed fragments. Empty releases are rejected unless explicitly
+  allowed; duplicate versions are always rejected. Validation failures leave the
+  changelog and fragments intact.
 * `notes --version <version> [--changelog CHANGELOG.md]` prints that dated release's
   body as Markdown, excluding the version heading.
 * `core-notes --version <version> --submodule <path> [--from <tag> --to HEAD]`
@@ -39,9 +40,13 @@ the folder order above, and sorts filenames within categories. Existing releases
 are unchanged. Migrate pending Unreleased notes into fragments and remove that
 section before adopting `prepare`; there is no new Unreleased section.
 
-SDK adapters own version updates, lockfile refresh, file writes, fragment deletion,
-Git commits, and PR creation. Consume only the returned paths after SDK-specific
-updates succeed. Fragments merged after preparation remain for the next release.
+SDK adapters update their version files and refresh their lockfile first, then
+invoke `prepare` with the new version and release date. The tool owns changelog
+writes and fragment consumption; adapters retain Git commits and PR creation.
+If validation fails, SDK-specific version and lock changes remain in the local
+worktree for inspection. File-system failures can also leave partial preparation;
+stop before committing and inspect the changes before retrying. Fragments merged
+after preparation remain for the next release.
 
 The existing `changelog-release-notes --from <sha> --to <sha>
 [--changelog rust|core]` interface remains available. Its history traversal includes

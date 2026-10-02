@@ -71,7 +71,7 @@ fn main() -> Result<(), String> {
         "prepare" => {
             let date = NaiveDate::parse_from_str(required("--date")?, "%Y-%m-%d")
                 .map_err(|e| e.to_string())?;
-            let plan = prepare_release(
+            let count = prepare_release(
                 &repo,
                 changelog,
                 directory,
@@ -84,8 +84,8 @@ fn main() -> Result<(), String> {
             )
             .map_err(|e| e.to_string())?;
             println!(
-                "{}",
-                serde_json::to_string(&plan).map_err(|e| e.to_string())?
+                "Prepared release {}; consumed {count} changelog fragments",
+                required("--version")?
             );
         }
         "notes" => {
